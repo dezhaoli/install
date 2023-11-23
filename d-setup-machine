@@ -4,10 +4,20 @@
 # @Date:   
 # Please contact dezhaoli if you have any questions.
 ###########################################################
-has_d=false
-command -v d >/dev/null 2>&1 && {
-	. d
-	has_d=true
+
+
+
+
+_die()
+{
+    local msg="$1"
+    echo -e "error: $msg" >&2
+    exit 1
+}
+_info()
+{
+    local msg="$1"
+	echo -e "$msg" >&2
 }
 
 #@ help="check environment variable"
@@ -387,7 +397,7 @@ function for_install_d_license()
 	_set_license(){
 		f=~/Desktop/build/install.d.licence
 		[[ -f "$f" ]] || f=~/install.d.licence
-		[[ -f "$f" ]] || info "warning: no '$f' found!"
+		[[ -f "$f" ]] || _info "warning: no '$f' found!"
 		< "$f" sed -n '/^[0-9]/ { s/ //g;H;  }; ${g; s/\n//g ;p;} ' | xargs dc  -e > $f.tmp;. $f.tmp;rm -f $f.tmp
 	}
 	__wrap _set_license
@@ -653,17 +663,6 @@ function upgrade-d-xargparse()
 
 # setup helper function
 {
-	_die()
-	{
-	    local msg="$1"
-	    echo -e "error: $msg" >&2
-	    exit 1
-	}
-	_info()
-	{
-	    local msg="$1"
-		echo -e "$msg" >&2
-	}
 
 	function _exist_formula()
     {
@@ -840,7 +839,11 @@ else
 	IS_WSL=false
 fi
 
-if $has_d; then
+
+has_d=false
+if command -v d >/dev/null 2>&1; then
+	. d
+	has_d=true
 	main "$@"
 elif (($#)); then
 	"$@"

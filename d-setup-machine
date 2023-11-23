@@ -408,6 +408,16 @@ for_install_d_license
 function for_brew()
 {
 
+	brew_path="/opt/homebrew/bin"
+	if [[ ! "$PATH" =~ "$brew_path" ]]; then
+		echo 'export PATH="$brew_path:$PATH"' >> ~/.bash_profile
+		export PATH="$brew_path:$PATH"
+	fi
+
+	if  _exist_cmd "brew" ; then
+		return 0
+	fi
+
 	if $IS_WSL ; then
 		[[ ! -r "/usr/bin/ruby" ]] && sudo apt update && sudo apt install -y ruby-full && ruby --version
 
@@ -744,11 +754,6 @@ function install-command-line-tools()
 	_info "install command line tools..."
 
 
-	brew_path="/opt/homebrew/bin"
-	if [[ ! "$PATH" =~ "$brew_path" ]]; then
-		echo 'export PATH="$brew_path:$PATH"' >> ~/.bash_profile
-		export PATH="$brew_path:$PATH"
-	fi
 	brew_install brew "" "for_brew"
 	brew_install bash "for_bash_before"
 

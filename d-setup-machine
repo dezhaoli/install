@@ -533,28 +533,6 @@ EOF
 
 
 
-function for_clang_format_after()
-{
-
-	if ! $IS_WSL; then
-		f="/usr/local/bin/clang-format-xcode.sh"
-		cat > "$f" <<"EOF"
-#!/bin/sh
-
-if [ -z "$1" ]; then
-    echo "Error: No input file specified"
-    exit 1
-fi
-
-/usr/local/bin/clang-format -i -style=file "$1"
-
-EOF
-		chmod +x "$f"
-	fi
-
-
-}
-
 for_pyenv_after()
 {
 	local py_path="$HOME/.pyenv/shims"
@@ -775,7 +753,6 @@ function install-command-line-tools()
 	brew_install expect											# unbuffer
 	brew_install libimobiledevice								# ios log idevicesyslog
 	brew_install ios-deploy										# ios 
-	brew_install "clang-format" "" "for_clang_format_after"		# format cpp
 
 	brew_install xargparse "for_d_before"
 	brew_install d "for_d_before"

@@ -20,6 +20,15 @@ _info()
 	echo -e "$msg" >&2
 }
 
+_add_path()
+{
+	local p="$1"
+	if [[ ! "$PATH" =~ "$p" ]]; then
+		echo "export PATH=\"$p:\$PATH\"" >> ~/.bash_profile
+		export PATH="$p:$PATH"
+	fi
+}
+
 #@ help="check environment variable"
 function check-project-config()
 {
@@ -405,14 +414,12 @@ function for_install_d_license()
 }
 for_install_d_license
 
+
 function for_brew()
 {
 
-	brew_path="/opt/homebrew/bin"
-	if [[ ! "$PATH" =~ "$brew_path" ]]; then
-		echo 'export PATH="$brew_path:$PATH"' >> ~/.bash_profile
-		export PATH="$brew_path:$PATH"
-	fi
+	_add_path "/opt/homebrew/bin"
+	_add_path "/usr/local/bin"
 
 	if  _exist_cmd "brew" ; then
 		return 0
@@ -535,12 +542,7 @@ EOF
 
 for_pyenv_after()
 {
-	local py_path="$HOME/.pyenv/shims"
-	
-
-	if [[ ! "$PATH" =~ "$py_path" ]]; then
-		echo "export PATH=$py_path:$PATH" >> ~/.bash_profile
-	fi
+	_add_path "$HOME/.pyenv/shims"
 
 	if $IS_WSL; then
 		#ubuntu 缺了这些库

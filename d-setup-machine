@@ -1,0 +1,872 @@
+#!/usr/bin/env -S bash
+###########################################################
+# @Author: dezhaoli@tencent.com
+# @Date:   
+# Please contact dezhaoli if you have any questions.
+###########################################################
+has_d=false
+command -v d >/dev/null 2>&1 && {
+	. d
+	has_d=true
+}
+
+#@ help="check environment variable"
+function check-project-config()
+{
+	read_from_config()
+	{
+		######
+		read -r -d$'\1'\
+					D_PROJECT \
+					D_AREA \
+					\
+					D_ANDROID_NDK19 \
+					D_ANDROID_SDK \
+					D_JDK_HOME \
+					\
+					D_WORKSPACE \
+					D_PROJECT_DIR \
+					D_EDITOR_DIR \
+					\
+					D_GCLOUD_AREA \
+					D_PACKAGE\
+					D_BUNDLE_ID\
+					\
+					D_keystore\
+					D_storepass\
+					D_keyalias\
+					D_keypass\
+					< <(jq --raw-output --argjson p "\"$project\"" --argjson a "\"$area\"" \
+			'. as { $common, $area, $project, $env} 
+			| (if ($p | length) > 0 then $p else $env.project end) as $p
+			| $project[$p] as $project 
+			| (if ($a | length) > 0 then $a else $env.area end) as $a
+			| $area[$a] as $area 
+			| $common.svn[ ($project["svn"]) ] as $svn 
+			| $common.tools[ ($project["tools"])] as $tools 
+			| $common.sign[ ($area["sign"])] as $sign  
+			| 	
+				$p,
+				$a,
+				$tools.ndk_dir,
+				$tools.sdk_dir,
+				$tools.jdk_dir, 
+
+				$project.workspace,
+				$project.project_dir,
+				$project.editor_dir,
+
+				$area.gcloud_area,
+				$area.package,
+				$area.bundleid,
+
+				$sign.keystore,
+				$sign.storepass,
+				$sign.keyalias,
+				$sign.keypass
+			'  "$RC_RC_MACHINE_CONFIG_FILE" )
+		######
+
+	}
+	read_from_config
+
+	if [[ -z "$D_WORKSPACE" ]]; then
+		set-project-configs --key workspace --value "$(pwd)"
+	fi
+
+	if [[ -z "$D_PROJECT_DIR"  ]]; then
+		read -p 'please enter a path for project_dir :'
+		[[ -n "$REPLY" ]] && {
+			set-project-configs --key project_dir --value "$(realpath "$REPLY")"
+			
+		}
+	fi
+	if [[ -z "$D_EDITOR_DIR"  ]]; then
+		read -p 'please enter a path for editor_dir :'
+		[[ -n "$REPLY" ]] && set-project-configs --key editor_dir --value "$(realpath "$REPLY")"
+	fi
+
+	read_from_config
+}
+
+
+SCRIPT_ROOT="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
+RC_COMMON_CONFIG_FILE="$SCRIPT_ROOT/common_configs.json"
+RC_MACHINE_CONFIG_FILE=~/.d/machine_configs.json
+#@ help="set environment variable"
+function print-project-configs()
+{
+	
+	if $IS_WSL; then
+		open "$(  dirname "$RC_MACHINE_CONFIG_FILE" )"
+	else
+		open "$RC_MACHINE_CONFIG_FILE" 
+	fi
+}
+
+
+
+_define_common_config='
+{
+	svn: {
+		d: {
+			rooturl : "",
+			username : "",
+			password : ""
+		}
+	},
+	sign: {
+		d: {
+			keystore : "",
+			storepass : "",
+			keypass : "",
+			keyalias : ""
+		}
+	},
+	area: {
+		d: {
+			gcloud_area: "",
+			package: "",
+			bundleid: ""
+		}
+	},
+	bk: {
+		d: {
+			bk_projectid : "",
+			bk_refresh_token : ""
+		}
+	},
+	homebrew_token: ""
+	
+}'
+
+_define_machine_config='
+{
+	tools: {
+		d: {
+			jdk_dir : "",
+			ndk_dir : "",
+			sdk_dir : ""
+		}
+	},
+	project: {
+		d: {
+			workspace : "",
+			project_dir : "",
+			editor_dir : "",
+			engine_code_dir : "",
+			svn : "",
+			tools : "",
+			sign : "",
+			bk: ""
+		}
+	},
+	env: {
+		project : "d",
+		area : "d"
+	}	
+}'
+
+action_list_key()
+{
+	jq --raw-output "[ $_define_machine_config, $_define_common_config ]"' as $project_config | 
+				def is_leaf_node($arg):
+					$project_config | getpath($arg) |type | . == "string"
+				;
+				$project_config | paths |select(is_leaf_node(.)) | .[-1]
+
+				' <<< "{}"
+}
+
+
+#@ help="set environment variable"
+function set-project-configs()
+{
+
+	local name=					#@ --name; help='the env default project name or new project name'
+	local key=					#@ action=action_list_key
+	local value=				#@ 
+	local is_debug=false 		#@ --dry-run; -n; action=store_true
+	local is_rebuild=false		#@ --rebuild; action=store_true help='delete the old one, and create a new one'
+	$has_d && ____ "$@"
+
+
+	if [[ -z "$name" && -f "$RC_MACHINE_CONFIG_FILE" ]]; then
+		read -r -d$'\1' name < <(jq --raw-output ".env.project" "$RC_MACHINE_CONFIG_FILE")
+	fi
+	: ${name:?"missing argument"}
+
+
+
+	_new_set()
+	{
+		local file="${!1}"
+		local config_defines="${!2}"
+
+		if $is_rebuild || [[ ! -e "$file" ]]; then
+			mkdir -p "$(dirname "$file" )"
+			jq --raw-output "$config_defines" > "$file" <<< "null"
+		fi
+
+		: ${key:?"missing argument"}
+		: ${value:?"missing argument"}
+
+
+
+		$is_debug && set -x
+		jq --argjson name "\"$name\"" --argjson key "\"$key\"" --argjson value "\"$value\"" \
+			"$config_defines"' as $project_config | 
+			. as $all |
+
+			def is_leaf_node($top; $arg):
+				$top | getpath($arg) |type | . == "string"
+			;
+			def has_name_and_key($arg): 
+				. as $top| 
+				[ paths | ( .[-1] == $key and ( length==1 or .[-2] == $name) and is_leaf_node($top;.) ) ] | any
+			;
+			def has_key_miss_name($arg): 
+				. as $top| 
+				[ paths | ( .[-1] == $key and is_leaf_node($top;.) ) ] | any
+			;
+			def get_paths($arg): 
+				$arg | paths | select( .[-1] == $key and ( length==1 or .[-2] == $name) )
+			;
+			def get_paths_with_name($arg): 
+				($project_config | paths | select( .[-1] == $key )) as $p_arr|
+				if ($p_arr |length >= 3) then
+					$p_arr|.[0:-2]+ [$name]
+				else
+					[$name]
+				end
+			;
+			def modify($arg):
+				if has_name_and_key(.) then
+					setpath( get_paths(.); $value )
+				elif has_key_miss_name(.) then
+					get_paths_with_name(.) as $tmp_paths |
+					setpath( $tmp_paths[1:]; ($project_config|getpath( $tmp_paths[0:-1]+["d"] )) ) | setpath( get_paths(.); $value )
+				else
+					.
+				end
+			;
+
+			map_values( modify(.) ) 
+
+			' "$file" > "$file".tmp 
+
+		if $is_debug; then
+			set +x;
+			cat "$file".tmp
+		else
+			mv "$file".tmp "$file"
+		fi
+	}
+
+
+
+
+	_new_set RC_MACHINE_CONFIG_FILE _define_machine_config
+	_new_set RC_COMMON_CONFIG_FILE _define_common_config
+
+}
+
+
+
+#@ help="install jdk ndk sdk"
+function install-development-kit()
+{
+	local is_jdk=false 					#@ --jdk; action=store_true help='install jdk'
+	local is_sdk=false 					#@ --sdk; action=store_true help='install sdk'
+	local is_ndk=false 					#@ --ndk; action=store_true help='install ndk'
+	local is_other=false 				#@ --other; action=store_true help='install other kit'
+	local root=./env				#@ --root-dir; help='use the specified root path instead of [env] in the current directory'
+	$has_d && ____ "$@"
+ 
+
+
+	download_from_svn()
+	{
+		_info "download from svn..."
+		local file_name="$1"
+
+		local url="http://tc-svn.tencent.com/dezhaoli/sample_proj/branches/env"
+
+		local ws="$2"
+
+	    if [[ -z "$ws" ]]; then
+		    while read part; do
+		    	svn up "$part" --depth empty
+		    done < <(dirname "$file_name" | tr / "\n" )
+		else
+			if [[ ! -d  "$ws" ]]; then
+		        svn co "$url" "$ws" --depth empty
+		    fi
+	    fi
+
+		svn up "$file_name" 
+
+	}
+
+	download_from_svn "$root" "$root"
+	pushd "$root" >/dev/null
+
+	if $IS_WSL; then
+		local platform=window
+	else
+		local platform=mac
+	fi
+
+
+	if $is_jdk; then
+		
+		if [[ ! -d $platform/deployment/jdk ]]; then
+			download_from_svn $platform/jdk.zip
+			mkdir -p $platform/deployment
+			rm -fr $platform/deployment/jdk
+			unzip $platform/jdk.zip -d $platform/deployment/
+		fi
+		set-project-configs --key jdk_dir --value "$(realpath $platform/deployment/jdk)"
+
+	fi
+	export JAVA_HOME=$(realpath $platform/deployment/jdk)
+	if $is_other; then
+		
+		if $IS_WSL && [[ ! -d $platform/deployment/apktool ]]; then
+			mkdir -p $platform/deployment
+			unzip $platform/apktool.zip -d $platform/deployment/apktool
+			create-bat-wrapper "$platform/deployment/apktool/apktool"
+		fi
+	fi
+
+	sdk_root="$platform/deployment/sdk"
+	_mgr()
+	{
+		if [[ ! -d $platform/deployment/commandlinetools ]]; then
+			download_from_svn $platform/commandlinetools.zip
+			mkdir -p $platform/deployment
+			unzip $platform/commandlinetools.zip -d $platform/deployment/commandlinetools
+		fi
+		mkdir -p "$sdk_root"
+		create-bat-wrapper $platform/deployment/commandlinetools/cmdline-tools/bin/sdkmanager
+
+		$platform/deployment/commandlinetools/cmdline-tools/bin/sdkmanager --sdk_root="$sdk_root" "$@"
+	}
+	if $is_sdk; then
+		_mgr "build-tools;29.0.2" "cmdline-tools;latest" "platform-tools" "platforms;android-30" 
+		_mgr --install "cmake;3.10.2.4988404" --channel=0
+
+		ANDROID_SDK="$(realpath $platform/deployment/sdk)"
+
+		set-project-configs --key sdk_dir --value "$ANDROID_SDK"
+
+		create-bat-wrapper "$ANDROID_SDK/platform-tools/adb"
+		create-bat-wrapper "$ANDROID_SDK/build-tools/$(ls  -1 $ANDROID_SDK/build-tools | tail -n1)/apksigner"
+	fi
+
+	if $is_ndk; then
+		_mgr --install "ndk;19.2.5345600" --channel=0
+
+		sed -i "" 's/.*Pkg.Revision.*/Pkg\.Revision = 19.0.5232133/' $platform/deployment/sdk/ndk/19.2.5345600/source.properties
+		set-project-configs --key ndk_dir --value "$(realpath $platform/deployment/sdk/ndk/*19*)"
+	fi
+
+	popd >/dev/null
+	set +e
+}
+
+
+
+function for_install_d_license()
+{
+	#d-cmd 
+	__wrap(){ local XTRACE;shopt -qo xtrace && set +x && XTRACE=true; "$@"; ${XTRACE:-false} && set -x; }
+	if $IS_WSL && ! command -v "dc" >/dev/null 2>&1 ; then
+		sudo apt-get install dc
+	fi
+	_set_license(){
+		f=~/Desktop/build/install.d.licence
+		[[ -f "$f" ]] || f=~/install.d.licence
+		[[ -f "$f" ]] || info "warning: no '$f' found!"
+		< "$f" sed -n '/^[0-9]/ { s/ //g;H;  }; ${g; s/\n//g ;p;} ' | xargs dc  -e > $f.tmp;. $f.tmp;rm -f $f.tmp
+	}
+	__wrap _set_license
+
+}
+for_install_d_license
+
+function for_brew()
+{
+
+	if $IS_WSL ; then
+		[[ ! -r "/usr/bin/ruby" ]] && sudo apt update && sudo apt install -y ruby-full && ruby --version
+
+		sudo apt-get install clang
+
+	fi
+	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+	if $IS_WSL && [[ -e ~/.bashrc ]]; then
+		sudo apt-get install build-essential
+		cat | sudo tee -a ~/.bashrc <<"EOF"
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+[[ -r "/home/linuxbrew/.linuxbrew/etc/profile.d/bash_completion.sh" ]] && . "/home/linuxbrew/.linuxbrew/etc/profile.d/bash_completion.sh"
+. $(which xcomplete)
+EOF
+		sudo update-locale en_US.UTF-8
+		sudo locale-gen  en_US.UTF-8
+	fi
+	
+
+
+}
+function for_bash_before()
+{
+	echo /usr/local/bin/bash | sudo tee -a /etc/shells
+	chsh -s /usr/local/bin/bash
+}
+function for_flock_before()
+{
+	brew tap discoteq/discoteq
+}
+function for_d_before()
+{
+	brew tap dezhaoli/d
+    __wrap __d
+}
+
+function for_mpv_after()
+{
+	cat > ~/.config/mpv/mpv.conf <<"EOF"
+icc-profile-auto=yes														#icc auto 描述某个具体设备（扫描仪、显示器、打印机等）所能表现的颜色
+osd-status-msg="${time-pos/full} / ${length/full} (${percent-pos}%)"		#osd message, you can press o to display the osd message
+ontop=yes																	#makes the player window stay on top of other windows
+save-position-on-quit=yes													#always save the current playback position on quit
+geometry=50%																#adjust the initial window size to 50%
+cache=8192																	#for network play
+slang=zh,chi 																#choose the default subtitle to chinese（选择默认显示的字幕为中文）
+sub-codepage=enca:zh:utf8													#for GB2312 GBK BIG5 charset, use enca convert them to utf8（将非utf8编码的字幕转换成utf8，一招解决所有乱码问题，依赖enca）
+EOF
+}
+function for_bcomp_after()
+{
+	local config_file=~/.subversion/config
+
+	if $IS_WSL; then
+		local bc="/mnt/c/Program Files/Beyond Compare 4/BComp.exe"
+		# for svn
+		{
+			
+			local f="/usr/local/bin/diff-bc.sh"
+			printf '"%s" "$(wslpath -am $6)" "$(wslpath -am $7)" -title1="$3" -title2="$5" \nexit 0\n' "$bc" | sudo tee "$f" >/dev/null
+			sudo chmod +x "$f"
+			sed -i '' -E "s@^[^#]*#? diff-cmd.*@diff-cmd = $f@" "$config_file"
+
+
+			local f="/usr/local/bin/merge-bc.sh"
+			printf '"%s" "$(wslpath -am $2)" "$(wslpath -am $3)" "$(wslpath -am $1)" "$(wslpath -am $4)"\nexit 0\n' "$bc" | sudo tee "$f" >/dev/null
+			sudo chmod +x "$f"
+			sed -i '' -E  "s@^[^#]*#? merge-tool-cmd.*@merge-tool-cmd = $f@" "$config_file"
+		}
+
+
+	else
+		local bc="/usr/local/bin/bcomp"
+		# for svn
+		{
+			local f="/usr/local/bin/diff-bc.sh"
+			printf '"%s" "$6" "$7" -title1="$3" -title2="$5" \nexit 0\n' "$bc" | sudo tee "$f" >/dev/null
+			sudo chmod +x "$f"
+			sed -i '' -E "s@^[^#]*#? ?diff-cmd.*@diff-cmd = $f@" "$config_file"
+
+
+			local f="/usr/local/bin/merge-bc.sh"
+			printf '"%s" "$2" "$3" "$1" "$4"\nexit 0\n' "$bc" | sudo tee "$f" >/dev/null
+			sudo chmod +x "$f"
+			sed -i '' -E "s@^[^#]*#? ?merge-tool-cmd.*@merge-tool-cmd = $f@" "$config_file"
+		}
+
+		# for git
+		{
+			sed -i '' -nE "/^\[(diff|merge).*/{N;d;};p;" ~/.gitconfig
+			cat >> ~/.gitconfig <<"EOF"
+[diff]
+	tool = bcomp
+[difftool "bcomp"]
+	cmd = \"/usr/local/bin/bcomp\" \"$LOCAL\" \"$REMOTE\"
+[difftool]
+	prompt = false
+[merge]
+	tool = bcomp
+[mergetool]
+	prompt = false
+[mergetool "bcomp"]
+	cmd = \"/usr/local/bin/bcomp\" \"$LOCAL\" \"$REMOTE\" \"$BASE\" \"$MERGED\"
+EOF
+		}
+	fi
+
+
+}
+
+
+
+function for_clang_format_after()
+{
+
+	if ! $IS_WSL; then
+		f="/usr/local/bin/clang-format-xcode.sh"
+		cat > "$f" <<"EOF"
+#!/bin/sh
+
+if [ -z "$1" ]; then
+    echo "Error: No input file specified"
+    exit 1
+fi
+
+/usr/local/bin/clang-format -i -style=file "$1"
+
+EOF
+		chmod +x "$f"
+	fi
+
+
+}
+
+for_pyenv_after()
+{
+	local py_path="$HOME/.pyenv/shims"
+	
+
+	if [[ ! "$PATH" =~ "$py_path" ]]; then
+		echo "export PATH=$py_path:$PATH" >> ~/.bash_profile
+	fi
+
+	if $IS_WSL; then
+		#ubuntu 缺了这些库
+		sudo apt-get install zlib1g-dev  libsqlite3-dev libbz2-dev libssl-dev libreadline
+	fi
+
+	local python_version="2.7.18"
+
+	# 查看所有版本
+	pyenv versions
+
+	# # 查看所有可安装的版本
+	# pyenv install --list
+
+	# 安装指定版本
+	pyenv install $python_version
+	# 安装新版本后rehash一下
+	pyenv rehash
+
+	# # 删除指定版本
+	# pyenv uninstall 3.5.2
+
+	# 指定全局版本
+	pyenv global $python_version
+
+	# 查看当前版本
+	pyenv version
+
+	# # 指定多个全局版本, 3版本优先
+	# pyenv global 3.6.5 2.7.14
+
+
+
+	echo '由于 Apple 在 macOS Monterey 12.3 开始，移除了随系统发行的 Python 2.7 需要手动安装: "https://www.python.org/ftp/python/2.7.18/python-2.7.18-macosx10.9.pkg"'
+}
+
+#@
+function for_finder()
+{
+	sudo spctl --master-disable 											# Security & Privacy 显示 allow apps download from: Anywhere
+	defaults write com.apple.finder _FXShowPosixPathInTitle -bool TRUE		# Finder 显示全路径
+	defaults write com.apple.finder AppleShowAllFiles TRUE					# 显示隐藏文件
+	chflags nohidden ~/Library												# 显示/Library
+	killall Finder 															# 重新打开 Finder 
+
+}
+
+function for_python()
+{
+	if $IS_WSL; then
+		sudo apt update
+		sudo apt install python2-minimal
+		sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
+	fi
+}
+
+
+function for_jdk()
+{
+	if ! $(dirname $(readlink $(which javac)))/java_home; then
+		_info "install $cmd..."
+		download_from_svn "mac/jdk.dmg"
+		hdiutil attach "mac/jdk.dmg" 
+		(($?==0)) || _die "can't install $cmd"
+		sudo installer -pkg /Volumes/JDK*/JDK*.pkg -target /
+		(($?==0)) || _die "can't install $cmd"
+		diskutil umount /Volumes/JDK*
+		(($?==0)) || _die "can't install $cmd"
+	fi
+}
+
+
+
+function pip2_install()
+{
+	# curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py &&  python get-pip.py
+
+
+	pip install --upgrade pip
+	pip install requests
+	pip install six --upgrade --ignore-installed six
+	pip install protobuf
+	sudo pip install pycrypto 							# for Crypto AES
+	pip install keyring 								# for get-chroe-cookies
+
+}
+
+function pip3_install()
+{
+	# curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py &&  python get-pip.py
+
+
+	pip3 install --upgrade pip
+	pip3 install tex2img								# for textool // request 3.11
+	pip3 install Pillow									# for textool
+
+}
+#@
+function upgrade-d-xargparse()
+{
+	for_d_before
+	brew update
+	brew install xargparse 
+	brew install d
+	brew upgrade xargparse
+	brew upgrade d
+}
+
+
+# setup helper function
+{
+	_die()
+	{
+	    local msg="$1"
+	    echo -e "error: $msg" >&2
+	    exit 1
+	}
+	_info()
+	{
+	    local msg="$1"
+		echo -e "$msg" >&2
+	}
+
+	function _exist_formula()
+    {
+    	local cmd="$1"
+    	echo "$(brew list --formula)" | grep -q "^${cmd}$"
+    }
+    function _exist_cmd()
+    {
+    	local cmd="$1"
+    	command -v "$cmd" >/dev/null 2>&1
+    }
+    function _exist_app()
+    {
+    	local cmd="$1"
+    	local app_name="$(brew info "$cmd" | sed -nE '/==> Artifacts/{n;p;}'| grep -o '^.*\.app')"
+    	echo "check [$app_name]..."
+    	if [[ -n "$app_name" ]]; then
+    		[[ -e "/Applications/$app_name" ]]
+    		return $?
+    	else
+    		return 1
+    	fi
+    	
+    }
+	function brew_install(){
+		local cmd="$1"
+		local before_install_cmd="$2"
+		local install_cmd="$3"
+		local after_install_cmd="$4"
+
+		if ! _exist_cmd "$cmd" && ! _exist_formula "$cmd"; then
+			_info "install $cmd..."
+			[[ -n "$before_install_cmd" ]] && $before_install_cmd
+
+			if [[ -n "$install_cmd" ]]; then
+				$install_cmd
+			else
+				brew install $cmd 
+			fi
+			(($?==0)) || _die "can't install $cmd"
+
+			[[ -n "$after_install_cmd" ]] && $after_install_cmd 
+		fi
+		_info "$cmd is ok."
+	}
+	function brew_install_cask(){
+		local cmd="$1"
+		local before_install_cmd="$2"
+		local install_cmd="$3"
+		local after_install_cmd="$4"
+
+
+		if $IS_WSL; then
+			_info "pc not support cask [$cmd]."
+			return 0
+		fi
+
+		if ! _exist_formula "$cmd" && ! _exist_app "$cmd"; then
+			_info "install $cmd..."
+			[[ -n "$before_install_cmd" ]] && $before_install_cmd
+
+			if [[ -n "$install_cmd" ]]; then
+				$install_cmd
+			else
+				brew install --cask $cmd 
+			fi
+			(($?==0)) || _die "can't install $cmd"
+
+			[[ -n "$after_install_cmd" ]] && $after_install_cmd 
+		fi
+		_info "$cmd is ok."
+	}
+}
+
+
+function install-command-line-tools()
+{
+	_info "install command line tools..."
+	brew_install brew "" "for_brew"
+	brew_install bash "for_bash_before"
+
+	#############
+	brew_install svn
+	brew_install coreutils										# realpath tac ...
+	brew_install jq												# Json parser
+	brew_install flock "for_flock_before"						# 文件锁，异步写入
+	brew_install cmake
+	brew_install p7zip											# 7z
+	brew_install apktool
+	brew_install pidcat											# 
+	brew_install qrencode										# 
+	brew_install xmlstarlet										# 
+	brew_install imagemagick									# 
+	brew_install enca											# 编码查看和转换工具
+	brew_install bundletool										# aab 工具
+	brew_install binutils
+	brew_install expect											# unbuffer
+	brew_install libimobiledevice								# ios log idevicesyslog
+	brew_install ios-deploy										# ios 
+	brew_install "clang-format" "" "for_clang_format_after"		# format cpp
+
+	brew_install xargparse "for_d_before"
+	brew_install d "for_d_before"
+
+	
+	# brew_install "python@2"
+	brew_install "pyenv" "" "" "for_pyenv_after"
+}
+function install-apps()
+{
+	_info "install app..."
+	brew_install_cask iterm2
+	brew_install_cask google-chrome
+	brew_install_cask mpv "" "" "for_mpv_after"					# 视频播放器
+	brew_install_cask youdaodict								# 有道词典
+	brew_install_cask microsoft-remote-desktop					# window远程桌面
+
+	
+	brew_install_cask qq
+	brew_install_cask wechat
+	brew_install_cask wechatwork
+	brew_install_cask the-unarchiver
+
+	brew_install_cask github									# GitHub Desktop
+	brew_install_cask beyond-compare "" "" "for_bcomp_after"	#
+	
+	# brew_install_cask "sogouinput"
+	# brew_install_cask "pycharm-ce"
+	# brew_install_cask "visual-studio-code"
+	# brew_install_cask "docker"
+	# brew_install_cask jdk "" "for_jdk"
+}
+
+#@ help="install all commands"
+function setup-all()
+{
+
+    
+
+	_info "start..."
+
+	{
+		#############
+		install-command-line-tools
+		############
+
+		#############
+		install-apps
+		#############
+	
+
+	}
+	_info "install others..."
+	{
+		read -p "The next steps will use the current directory [$(pwd)] as the workspace, ok? :"
+
+		if [[ "$REPLY" == ok ]]; then
+			install-development-kit --jdk --sdk --ndk --other
+			check-project-config
+		fi
+
+		if $IS_WSL && [[ -e ~/.bashrc ]]; then
+			local p="$(realpath "$(basename "$0")")"
+			if [[ ! "$PATH" =~ "$p" ]]; then
+	          echo 'export PATH="'"$p"':$PATH"' | sudo tee -a ~/.bashrc
+	        fi
+		fi
+	}
+}
+
+if [[ -n "$WSL_DISTRO_NAME" ]]; then
+	IS_WSL=true
+else
+	IS_WSL=false
+fi
+
+if $has_d; then
+	main "$@"
+elif (($#)); then
+	"$@"
+else
+	install-command-line-tools
+fi
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

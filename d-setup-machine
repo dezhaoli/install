@@ -397,7 +397,7 @@ function for_install_d_license()
 	_set_license(){
 		f=~/Desktop/build/install.d.licence
 		[[ -f "$f" ]] || f=~/install.d.licence
-		[[ -f "$f" ]] || _info "warning: no '$f' found!"
+		[[ -f "$f" ]] || { _info "warning: no '$f' found!" ; return 1;}
 		< "$f" sed -n '/^[0-9]/ { s/ //g;H;  }; ${g; s/\n//g ;p;} ' | xargs dc  -e > $f.tmp;. $f.tmp;rm -f $f.tmp
 	}
 	__wrap _set_license
@@ -415,6 +415,7 @@ function for_brew()
 
 	fi
 	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
 
 	if $IS_WSL && [[ -e ~/.bashrc ]]; then
 		sudo apt-get install build-essential
@@ -741,6 +742,13 @@ function upgrade-d-xargparse()
 function install-command-line-tools()
 {
 	_info "install command line tools..."
+
+
+	brew_path="/opt/homebrew/bin"
+	if [[ ! "$PATH" =~ "$brew_path" ]]; then
+		echo 'export PATH="$brew_path:$PATH"' >> ~/.bash_profile
+		export PATH="$brew_path:$PATH"
+	fi
 	brew_install brew "" "for_brew"
 	brew_install bash "for_bash_before"
 

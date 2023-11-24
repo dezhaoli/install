@@ -25,7 +25,7 @@
 	{
 		local p="$1"
 		if [[ ! -d "$p" ]]; then
-			mkdir -p "$p"
+			sudo mkdir -p "$p"
 		fi
 		if [[ ! "$PATH" =~ "$p" ]]; then
 			echo "export PATH=\"$p:\$PATH\"" >> ~/.bash_profile
@@ -196,19 +196,19 @@ function check-project-config()
 	read_from_config
 
 	if [[ -z "$D_WORKSPACE" ]]; then
-		set-project-configs --key workspace --value "$(pwd)"
+		set-project-configs workspace "$(pwd)"
 	fi
 
 	if [[ -z "$D_PROJECT_DIR"  ]]; then
 		read -p 'please enter a path for project_dir :'
 		[[ -n "$REPLY" ]] && {
-			set-project-configs --key project_dir --value "$(realpath "$REPLY")"
+			set-project-configs project_dir "$(realpath "$REPLY")"
 			
 		}
 	fi
 	if [[ -z "$D_EDITOR_DIR"  ]]; then
 		read -p 'please enter a path for editor_dir :'
-		[[ -n "$REPLY" ]] && set-project-configs --key editor_dir --value "$(realpath "$REPLY")"
+		[[ -n "$REPLY" ]] && set-project-configs editor_dir "$(realpath "$REPLY")"
 	fi
 
 	read_from_config
@@ -429,7 +429,7 @@ function install-development-kit()
 			rm -fr $platform/deployment/jdk
 			unzip $platform/jdk.zip -d $platform/deployment/
 		fi
-		set-project-configs --key jdk_dir --value "$(realpath $platform/deployment/jdk)"
+		set-project-configs jdk_dir "$(realpath $platform/deployment/jdk)"
 
 	fi
 	export JAVA_HOME=$(realpath $platform/deployment/jdk)
@@ -461,7 +461,7 @@ function install-development-kit()
 
 		ANDROID_SDK="$(realpath $platform/deployment/sdk)"
 
-		set-project-configs --key sdk_dir --value "$ANDROID_SDK"
+		set-project-configs sdk_dir "$ANDROID_SDK"
 
 		create-bat-wrapper "$ANDROID_SDK/platform-tools/adb"
 		create-bat-wrapper "$ANDROID_SDK/build-tools/$(ls  -1 $ANDROID_SDK/build-tools | tail -n1)/apksigner"
@@ -471,7 +471,7 @@ function install-development-kit()
 		_mgr --install "ndk;19.2.5345600" --channel=0
 
 		sed -i "" 's/.*Pkg.Revision.*/Pkg\.Revision = 19.0.5232133/' $platform/deployment/sdk/ndk/19.2.5345600/source.properties
-		set-project-configs --key ndk_dir --value "$(realpath $platform/deployment/sdk/ndk/*19*)"
+		set-project-configs ndk_dir "$(realpath $platform/deployment/sdk/ndk/*19*)"
 	fi
 
 	popd >/dev/null

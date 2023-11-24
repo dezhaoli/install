@@ -193,7 +193,7 @@ function check-project-config()
 				$sign.storepass,
 				$sign.keyalias,
 				$sign.keypass
-			'  "$RC_RC_MACHINE_CONFIG_FILE" )
+			'  "$RC_MACHINE_CONFIG_FILE" )
 		######
 
 	}

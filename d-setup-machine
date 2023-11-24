@@ -5,22 +5,26 @@
 # Please contact dezhaoli if you have any questions.
 ###########################################################
 
+has_d=false
+if command -v d >/dev/null 2>&1; then
+	. d
+	has_d=true
+fi
 
 # setup helper function
 {
 
-	_die()
+	_d_die()
 	{
 		local msg="$1"
 		echo -e "error: $msg" >&2
 		exit 1
 	}
-	_info()
+	_d_info()
 	{
 		local msg="$1"
 		echo -e "$msg" >&2
 	}
-
 	_add_path()
 	{
 		local p="$1"
@@ -62,7 +66,7 @@
 		local after_install_cmd="$4"
 
 		if ! _exist_cmd "$cmd" && ! _exist_formula "$cmd"; then
-			_info "install $cmd..."
+			_d_info "install $cmd..."
 			[[ -n "$before_install_cmd" ]] && $before_install_cmd
 
 			if [[ -n "$install_cmd" ]]; then
@@ -70,11 +74,11 @@
 			else
 				brew install $cmd 
 			fi
-			(($?==0)) || _die "can't install $cmd"
+			(($?==0)) || _d_die "can't install $cmd"
 
 			[[ -n "$after_install_cmd" ]] && $after_install_cmd 
 		fi
-		_info "$cmd is ok."
+		_d_info "$cmd is ok."
 	}
 	_d_brew_install_cask(){
 		local cmd="$1"
@@ -84,12 +88,12 @@
 
 
 		if $IS_WSL; then
-			_info "pc not support cask [$cmd]."
+			_d_info "pc not support cask [$cmd]."
 			return 0
 		fi
 
 		if ! _exist_formula "$cmd" && ! _exist_app "$cmd"; then
-			_info "install $cmd..."
+			_d_info "install $cmd..."
 			[[ -n "$before_install_cmd" ]] && $before_install_cmd
 
 			if [[ -n "$install_cmd" ]]; then
@@ -97,11 +101,11 @@
 			else
 				brew install --cask $cmd 
 			fi
-			(($?==0)) || _die "can't install $cmd"
+			(($?==0)) || _d_die "can't install $cmd"
 
 			[[ -n "$after_install_cmd" ]] && $after_install_cmd 
 		fi
-		_info "$cmd is ok."
+		_d_info "$cmd is ok."
 	}
 
 	_d_download_from_svn()
@@ -109,8 +113,8 @@
 		local file_name="$1"
 		local ws="$2"
 
-		_info "download '$file_name' from svn to '$ws'..."
-		[[ -n "$__d_apps_url" ]] || { _info "warning: No __d_apps_url found. License is required to download from svn."; return; }
+		_d_info "download '$file_name' from svn to '$ws'..."
+		[[ -n "$__d_apps_url" ]] || { _d_info "warning: No __d_apps_url found. License is required to download from svn."; return; }
 		if [[ -z "$ws" ]]; then
 			while read part; do
 				svn up "$part" --depth empty
@@ -130,7 +134,7 @@
 		if _exist_cmd "$1"; then 
 			"$@"
 		else
-			_info "warnnig: no cmd '$1' found."
+			_d_info "warnnig: no cmd '$1' found."
 		fi
 	}
 }
@@ -410,9 +414,8 @@ function install-development-kit()
  
 
 
-
 	_d_download_from_svn "$root" "$root"
-	pushd "$root" >/dev/null
+	pushd "$root" >/dev/null 2>&1 || _d_die "Failed to pushd '$root'"
 
 	if $IS_WSL; then
 		local platform=window
@@ -442,9 +445,10 @@ function install-development-kit()
 		fi
 	fi
 
-	sdk_root="$platform/deployment/sdk"
+	
 	_mgr()
 	{
+		local sdk_root="$platform/deployment/sdk"
 		if [[ ! -d $platform/deployment/commandlinetools ]]; then
 			_d_download_from_svn $platform/commandlinetools.zip
 			mkdir -p $platform/deployment
@@ -699,14 +703,14 @@ function for_python()
 function for_jdk()
 {
 	if ! $(dirname $(readlink $(which javac)))/java_home; then
-		_info "install $cmd..."
+		_d_info "install $cmd..."
 		_d_download_from_svn "mac/jdk.dmg"
 		hdiutil attach "mac/jdk.dmg" 
-		(($?==0)) || _die "can't install $cmd"
+		(($?==0)) || _d_die "can't install $cmd"
 		sudo installer -pkg /Volumes/JDK*/JDK*.pkg -target /
-		(($?==0)) || _die "can't install $cmd"
+		(($?==0)) || _d_die "can't install $cmd"
 		diskutil umount /Volumes/JDK*
-		(($?==0)) || _die "can't install $cmd"
+		(($?==0)) || _d_die "can't install $cmd"
 	fi
 }
 
@@ -752,7 +756,7 @@ function upgrade-d-xargparse()
 
 function install-command-line-tools()
 {
-	_info "install command line tools..."
+	_d_info "install command line tools..."
 
 
 	_d_brew_install brew "" "for_brew"
@@ -789,7 +793,7 @@ function install-command-line-tools()
 }
 function install-apps()
 {
-	_info "install app..."
+	_d_info "install app..."
 	_d_brew_install_cask google-chrome
 	_d_brew_install_cask mpv "" "" "for_mpv_after"					# 视频播放器
 	_d_brew_install_cask youdaodict								# 有道词典
@@ -817,7 +821,7 @@ function setup-all()
 
     
 
-	_info "start..."
+	_d_info "start..."
 
 	{
 		#############
@@ -830,7 +834,7 @@ function setup-all()
 	
 
 	}
-	_info "install others..."
+	_d_info "install others..."
 	{
 		read -p "The next steps will use the current directory [$(pwd)] as the workspace, ok? :"
 
@@ -866,10 +870,8 @@ _add_path "/opt/homebrew/bin"
 _add_path "/usr/local/bin"
 
 
-has_d=false
-if command -v d >/dev/null 2>&1; then
-	. d
-	has_d=true
+
+if $has_d; then
 	main "$@"
 elif (($#)); then
 	"$@"

@@ -23,6 +23,9 @@ _info()
 _add_path()
 {
 	local p="$1"
+	if [[ ! -d "$p" ]]; then
+		mkdir -p "$p"
+	fi
 	if [[ ! "$PATH" =~ "$p" ]]; then
 		echo "export PATH=\"$p:\$PATH\"" >> ~/.bash_profile
 		export PATH="$p:$PATH"
@@ -418,8 +421,6 @@ for_install_d_license
 function for_brew()
 {
 
-	_add_path "/opt/homebrew/bin"
-	_add_path "/usr/local/bin"
 
 	if  _exist_cmd "brew" ; then
 		return 0
@@ -451,8 +452,8 @@ EOF
 }
 function for_bash_before()
 {
-	echo /usr/local/bin/bash | sudo tee -a /etc/shells
-	chsh -s /usr/local/bin/bash
+	echo $DEF_BIN_DIR/bash | sudo tee -a /etc/shells
+	chsh -s $DEF_BIN_DIR/bash
 }
 function for_flock_before()
 {
@@ -762,11 +763,13 @@ function install-command-line-tools()
 	
 	# brew_install "python@2"
 	brew_install "pyenv" "" "" "for_pyenv_after"
+
+
+	brew_install_cask iterm2
 }
 function install-apps()
 {
 	_info "install app..."
-	brew_install_cask iterm2
 	brew_install_cask google-chrome
 	brew_install_cask mpv "" "" "for_mpv_after"					# 视频播放器
 	brew_install_cask youdaodict								# 有道词典
@@ -825,11 +828,22 @@ function setup-all()
 	}
 }
 
+
 if [[ -n "$WSL_DISTRO_NAME" ]]; then
 	IS_WSL=true
 else
 	IS_WSL=false
 fi
+
+DEF_BIN_DIR="/usr/local/bin"
+if [[ "$(uname -m)" == arm64 ]] ;then  
+	IS_APPLE_CHIP=true
+	DEF_BIN_DIR="/opt/homebrew/bin"
+else 
+	IS_APPLE_CHIP=false
+fi
+_add_path "/opt/homebrew/bin"
+_add_path "/usr/local/bin"
 
 
 has_d=false

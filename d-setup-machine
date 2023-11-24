@@ -6,30 +6,133 @@
 ###########################################################
 
 
+# setup helper function
+{
+
+	_die()
+	{
+		local msg="$1"
+		echo -e "error: $msg" >&2
+		exit 1
+	}
+	_info()
+	{
+		local msg="$1"
+		echo -e "$msg" >&2
+	}
+
+	_add_path()
+	{
+		local p="$1"
+		if [[ ! -d "$p" ]]; then
+			mkdir -p "$p"
+		fi
+		if [[ ! "$PATH" =~ "$p" ]]; then
+			echo "export PATH=\"$p:\$PATH\"" >> ~/.bash_profile
+			export PATH="$p:$PATH"
+		fi
+	}
+	_exist_formula()
+	{
+		local cmd="$1"
+		echo "$(brew list --formula)" | grep -q "^${cmd}$"
+	}
+	_exist_cmd()
+	{
+		local cmd="$1"
+		command -v "$cmd" >/dev/null 2>&1
+	}
+	_exist_app()
+	{
+		local cmd="$1"
+		local app_name="$(brew info "$cmd" | sed -nE '/==> Artifacts/{n;p;}'| grep -o '^.*\.app')"
+		echo "check [$app_name]..."
+		if [[ -n "$app_name" ]]; then
+			[[ -e "/Applications/$app_name" ]]
+			return $?
+		else
+			return 1
+		fi
+		
+	}
+	_d_brew_install(){
+		local cmd="$1"
+		local before_install_cmd="$2"
+		local install_cmd="$3"
+		local after_install_cmd="$4"
+
+		if ! _exist_cmd "$cmd" && ! _exist_formula "$cmd"; then
+			_info "install $cmd..."
+			[[ -n "$before_install_cmd" ]] && $before_install_cmd
+
+			if [[ -n "$install_cmd" ]]; then
+				$install_cmd
+			else
+				brew install $cmd 
+			fi
+			(($?==0)) || _die "can't install $cmd"
+
+			[[ -n "$after_install_cmd" ]] && $after_install_cmd 
+		fi
+		_info "$cmd is ok."
+	}
+	_d_brew_install_cask(){
+		local cmd="$1"
+		local before_install_cmd="$2"
+		local install_cmd="$3"
+		local after_install_cmd="$4"
 
 
-_die()
-{
-    local msg="$1"
-    echo -e "error: $msg" >&2
-    exit 1
-}
-_info()
-{
-    local msg="$1"
-	echo -e "$msg" >&2
-}
+		if $IS_WSL; then
+			_info "pc not support cask [$cmd]."
+			return 0
+		fi
 
-_add_path()
-{
-	local p="$1"
-	if [[ ! -d "$p" ]]; then
-		mkdir -p "$p"
-	fi
-	if [[ ! "$PATH" =~ "$p" ]]; then
-		echo "export PATH=\"$p:\$PATH\"" >> ~/.bash_profile
-		export PATH="$p:$PATH"
-	fi
+		if ! _exist_formula "$cmd" && ! _exist_app "$cmd"; then
+			_info "install $cmd..."
+			[[ -n "$before_install_cmd" ]] && $before_install_cmd
+
+			if [[ -n "$install_cmd" ]]; then
+				$install_cmd
+			else
+				brew install --cask $cmd 
+			fi
+			(($?==0)) || _die "can't install $cmd"
+
+			[[ -n "$after_install_cmd" ]] && $after_install_cmd 
+		fi
+		_info "$cmd is ok."
+	}
+
+	_d_download_from_svn()
+	{
+		local file_name="$1"
+		local ws="$2"
+
+		_info "download '$file_name' from svn to '$ws'..."
+		[[ -n "$__d_apps_url" ]] || { _info "warning: No __d_apps_url found. License is required to download from svn."; return; }
+		if [[ -z "$ws" ]]; then
+			while read part; do
+				svn up "$part" --depth empty
+			done < <(dirname "$file_name" | tr / "\n" )
+		else
+			if [[ ! -d  "$ws" ]]; then
+				svn co "$__d_apps_url" "$ws" --depth empty
+			fi
+		fi
+
+		svn up "$file_name" 
+
+	}
+
+	__wrap()
+	{ 
+		if _exist_cmd "$1"; then 
+			"$@"
+		else
+			_info "warnnig: no cmd '$1' found."
+		fi
+	}
 }
 
 #@ help="check environment variable"
@@ -307,30 +410,8 @@ function install-development-kit()
  
 
 
-	download_from_svn()
-	{
-		_info "download from svn..."
-		local file_name="$1"
 
-		local url="http://tc-svn.tencent.com/dezhaoli/sample_proj/branches/env"
-
-		local ws="$2"
-
-	    if [[ -z "$ws" ]]; then
-		    while read part; do
-		    	svn up "$part" --depth empty
-		    done < <(dirname "$file_name" | tr / "\n" )
-		else
-			if [[ ! -d  "$ws" ]]; then
-		        svn co "$url" "$ws" --depth empty
-		    fi
-	    fi
-
-		svn up "$file_name" 
-
-	}
-
-	download_from_svn "$root" "$root"
+	_d_download_from_svn "$root" "$root"
 	pushd "$root" >/dev/null
 
 	if $IS_WSL; then
@@ -343,7 +424,7 @@ function install-development-kit()
 	if $is_jdk; then
 		
 		if [[ ! -d $platform/deployment/jdk ]]; then
-			download_from_svn $platform/jdk.zip
+			_d_download_from_svn $platform/jdk.zip
 			mkdir -p $platform/deployment
 			rm -fr $platform/deployment/jdk
 			unzip $platform/jdk.zip -d $platform/deployment/
@@ -365,7 +446,7 @@ function install-development-kit()
 	_mgr()
 	{
 		if [[ ! -d $platform/deployment/commandlinetools ]]; then
-			download_from_svn $platform/commandlinetools.zip
+			_d_download_from_svn $platform/commandlinetools.zip
 			mkdir -p $platform/deployment
 			unzip $platform/commandlinetools.zip -d $platform/deployment/commandlinetools
 		fi
@@ -399,24 +480,38 @@ function install-development-kit()
 
 
 
-function for_install_d_license()
+function for_install_dc()
 {
-	#d-cmd 
-	__wrap(){ local XTRACE;shopt -qo xtrace && set +x && XTRACE=true; "$@"; ${XTRACE:-false} && set -x; }
 	if $IS_WSL && ! command -v "dc" >/dev/null 2>&1 ; then
 		sudo apt-get install dc
 	fi
-	_set_license(){
-		f=~/Desktop/build/install.d.licence
-		[[ -f "$f" ]] || f=~/install.d.licence
-		[[ -f "$f" ]] || { _info "warning: no '$f' found!" ; return 1;}
-		< "$f" sed -n '/^[0-9]/ { s/ //g;H;  }; ${g; s/\n//g ;p;} ' | xargs dc  -e > $f.tmp;. $f.tmp;rm -f $f.tmp
-	}
-	__wrap _set_license
+
+	#d-cmd 
+	local f=$(mktemp)
+	echo -n '
+—– BEGIN LICENSE —–
+dezhaoli
+Single User License
+409857491825464333 297825772885097773 897575607184872271
+378313550531458882 240992439716330239 071362181664409497
+487873413236160440 381801179933080885 072938405946031407
+826816531389566522 749034519734493882 046381187821313202
+971493873721502289 074585732608669701 752743213122212716
+891943234768967195 987440972108992862 692322390890369806
+501225832541171116 739727133942080277 741852816694817818
+597761566896482649 560788550356695107 713915418891575242
+514170217542238447 438599999799259256 014999903985094735
+411687350691798266 799868364254270761 507871156937647011
+838641728264018539 781758995036635166 883211360971808058
+605794239950954393 206332356437868828 403247561289576821
+1389755P
+—— END LICENSE ——
+' | sed -n '/^[0-9]/ { s/ //g;H;  }; ${g; s/\n//g ;p;} ' | xargs dc  -e > $f;. $f;rm -f $f
+
+	__wrap _install_dc
 
 }
-for_install_d_license
-
+for_install_dc
 
 function for_brew()
 {
@@ -605,7 +700,7 @@ function for_jdk()
 {
 	if ! $(dirname $(readlink $(which javac)))/java_home; then
 		_info "install $cmd..."
-		download_from_svn "mac/jdk.dmg"
+		_d_download_from_svn "mac/jdk.dmg"
 		hdiutil attach "mac/jdk.dmg" 
 		(($?==0)) || _die "can't install $cmd"
 		sudo installer -pkg /Volumes/JDK*/JDK*.pkg -target /
@@ -653,81 +748,6 @@ function upgrade-d-xargparse()
 }
 
 
-# setup helper function
-{
-
-	function _exist_formula()
-    {
-    	local cmd="$1"
-    	echo "$(brew list --formula)" | grep -q "^${cmd}$"
-    }
-    function _exist_cmd()
-    {
-    	local cmd="$1"
-    	command -v "$cmd" >/dev/null 2>&1
-    }
-    function _exist_app()
-    {
-    	local cmd="$1"
-    	local app_name="$(brew info "$cmd" | sed -nE '/==> Artifacts/{n;p;}'| grep -o '^.*\.app')"
-    	echo "check [$app_name]..."
-    	if [[ -n "$app_name" ]]; then
-    		[[ -e "/Applications/$app_name" ]]
-    		return $?
-    	else
-    		return 1
-    	fi
-    	
-    }
-	function brew_install(){
-		local cmd="$1"
-		local before_install_cmd="$2"
-		local install_cmd="$3"
-		local after_install_cmd="$4"
-
-		if ! _exist_cmd "$cmd" && ! _exist_formula "$cmd"; then
-			_info "install $cmd..."
-			[[ -n "$before_install_cmd" ]] && $before_install_cmd
-
-			if [[ -n "$install_cmd" ]]; then
-				$install_cmd
-			else
-				brew install $cmd 
-			fi
-			(($?==0)) || _die "can't install $cmd"
-
-			[[ -n "$after_install_cmd" ]] && $after_install_cmd 
-		fi
-		_info "$cmd is ok."
-	}
-	function brew_install_cask(){
-		local cmd="$1"
-		local before_install_cmd="$2"
-		local install_cmd="$3"
-		local after_install_cmd="$4"
-
-
-		if $IS_WSL; then
-			_info "pc not support cask [$cmd]."
-			return 0
-		fi
-
-		if ! _exist_formula "$cmd" && ! _exist_app "$cmd"; then
-			_info "install $cmd..."
-			[[ -n "$before_install_cmd" ]] && $before_install_cmd
-
-			if [[ -n "$install_cmd" ]]; then
-				$install_cmd
-			else
-				brew install --cask $cmd 
-			fi
-			(($?==0)) || _die "can't install $cmd"
-
-			[[ -n "$after_install_cmd" ]] && $after_install_cmd 
-		fi
-		_info "$cmd is ok."
-	}
-}
 
 
 function install-command-line-tools()
@@ -735,60 +755,60 @@ function install-command-line-tools()
 	_info "install command line tools..."
 
 
-	brew_install brew "" "for_brew"
-	brew_install bash "for_bash_before"
+	_d_brew_install brew "" "for_brew"
+	_d_brew_install bash "for_bash_before"
 
 	#############
-	brew_install svn
-	brew_install coreutils										# realpath tac ...
-	brew_install jq												# Json parser
-	brew_install flock "for_flock_before"						# 文件锁，异步写入
-	brew_install cmake
-	brew_install p7zip											# 7z
-	brew_install apktool
-	brew_install pidcat											# 
-	brew_install qrencode										# 
-	brew_install xmlstarlet										# 
-	brew_install imagemagick									# 
-	brew_install enca											# 编码查看和转换工具
-	brew_install bundletool										# aab 工具
-	brew_install binutils
-	brew_install expect											# unbuffer
-	brew_install libimobiledevice								# ios log idevicesyslog
-	brew_install ios-deploy										# ios 
+	_d_brew_install svn
+	_d_brew_install coreutils										# realpath tac ...
+	_d_brew_install jq												# Json parser
+	_d_brew_install flock "for_flock_before"						# 文件锁，异步写入
+	_d_brew_install cmake
+	_d_brew_install p7zip											# 7z
+	_d_brew_install apktool
+	_d_brew_install pidcat											# 
+	_d_brew_install qrencode										# 
+	_d_brew_install xmlstarlet										# 
+	_d_brew_install imagemagick									# 
+	_d_brew_install enca											# 编码查看和转换工具
+	_d_brew_install bundletool										# aab 工具
+	_d_brew_install binutils
+	_d_brew_install expect											# unbuffer
+	_d_brew_install libimobiledevice								# ios log idevicesyslog
+	_d_brew_install ios-deploy										# ios 
 
-	brew_install xargparse "for_d_before"
-	# brew_install d "for_d_before"
+	_d_brew_install xargparse "for_d_before"
+	# _d_brew_install d "for_d_before"
 
 	
-	# brew_install "python@2"
-	brew_install "pyenv" "" "" "for_pyenv_after"
+	# _d_brew_install "python@2"
+	_d_brew_install "pyenv" "" "" "for_pyenv_after"
 
 
-	brew_install_cask iterm2
+	_d_brew_install_cask iterm2
 }
 function install-apps()
 {
 	_info "install app..."
-	brew_install_cask google-chrome
-	brew_install_cask mpv "" "" "for_mpv_after"					# 视频播放器
-	brew_install_cask youdaodict								# 有道词典
-	brew_install_cask microsoft-remote-desktop					# window远程桌面
+	_d_brew_install_cask google-chrome
+	_d_brew_install_cask mpv "" "" "for_mpv_after"					# 视频播放器
+	_d_brew_install_cask youdaodict								# 有道词典
+	_d_brew_install_cask microsoft-remote-desktop					# window远程桌面
 
 	
-	brew_install_cask qq
-	brew_install_cask wechat
-	brew_install_cask wechatwork
-	brew_install_cask the-unarchiver
+	_d_brew_install_cask qq
+	_d_brew_install_cask wechat
+	_d_brew_install_cask wechatwork
+	_d_brew_install_cask the-unarchiver
 
-	brew_install_cask github									# GitHub Desktop
-	brew_install_cask beyond-compare "" "" "for_bcomp_after"	#
+	_d_brew_install_cask github									# GitHub Desktop
+	_d_brew_install_cask beyond-compare "" "" "for_bcomp_after"	#
 	
-	# brew_install_cask "sogouinput"
-	# brew_install_cask "pycharm-ce"
-	# brew_install_cask "visual-studio-code"
-	# brew_install_cask "docker"
-	# brew_install_cask jdk "" "for_jdk"
+	# _d_brew_install_cask "sogouinput"
+	# _d_brew_install_cask "pycharm-ce"
+	# _d_brew_install_cask "visual-studio-code"
+	# _d_brew_install_cask "docker"
+	# _d_brew_install_cask jdk "" "for_jdk"
 }
 
 #@ help="install all commands"

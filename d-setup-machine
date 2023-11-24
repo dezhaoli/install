@@ -836,12 +836,12 @@ else
 fi
 
 DEF_BIN_DIR="/usr/local/bin"
+IS_APPLE_CHIP=false
 if [[ "$(uname -m)" == arm64 ]] ;then  
 	IS_APPLE_CHIP=true
 	DEF_BIN_DIR="/opt/homebrew/bin"
-else 
-	IS_APPLE_CHIP=false
 fi
+
 _add_path "/opt/homebrew/bin"
 _add_path "/usr/local/bin"
 

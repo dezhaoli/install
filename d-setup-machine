@@ -794,9 +794,9 @@ function install-apps()
 {
 	_d_info "install app..."
 	_d_brew_install_cask google-chrome
-	_d_brew_install_cask mpv "" "" "for_mpv_after"					# 视频播放器
+	_d_brew_install_cask mpv "" "" "for_mpv_after"				# 视频播放器
 	_d_brew_install_cask youdaodict								# 有道词典
-	_d_brew_install_cask microsoft-remote-desktop					# window远程桌面
+	_d_brew_install_cask microsoft-remote-desktop				# window远程桌面
 
 	
 	_d_brew_install_cask qq
@@ -811,44 +811,44 @@ function install-apps()
 	# _d_brew_install_cask "pycharm-ce"
 	# _d_brew_install_cask "visual-studio-code"
 	# _d_brew_install_cask "docker"
-	# _d_brew_install_cask jdk "" "for_jdk"
+	# _d_brew_install_cask jdk "" "for_jdk" # replace this to 'install-development-kit --jdk'
 }
 
 #@ help="install all commands"
 function setup-all()
 {
-
-    
-
 	_d_info "start..."
 
+	__step()
 	{
-		#############
-		install-command-line-tools
-		############
+		local msg="$1"
+		shift 1
 
-		#############
-		install-apps
-		#############
-	
-
-	}
-	_d_info "install others..."
-	{
-		read -p "The next steps will use the current directory [$(pwd)] as the workspace, ok? :"
-
+		read -p "The next steps will install $msg. Enter ok to install, and the rest will be skipped: "
 		if [[ "$REPLY" == ok ]]; then
-			install-development-kit --jdk --sdk --ndk --other
-			check-project-config
-		fi
-
-		if $IS_WSL && [[ -e ~/.bashrc ]]; then
-			local p="$(realpath "$(basename "$0")")"
-			if [[ ! "$PATH" =~ "$p" ]]; then
-	          echo 'export PATH="'"$p"':$PATH"' | sudo tee -a ~/.bashrc
-	        fi
+			_d_info "install $msg..."
+			"$@"
 		fi
 	}
+
+	__step "command line tools" install-command-line-tools
+
+	__step "some favorite apps" install-apps
+
+
+	_install_dev_kit_and_check()
+	{
+		install-development-kit --jdk --sdk --ndk --other
+		check-project-config
+	}
+	__step "jdk sdk ndk in the current directory '$(pwd)'" _install_dev_kit_and_check
+
+	if $IS_WSL && [[ -e ~/.bashrc ]]; then
+		local p="$(realpath "$(basename "$0")")"
+		if [[ ! "$PATH" =~ "$p" ]]; then
+          echo 'export PATH="'"$p"':$PATH"' | sudo tee -a ~/.bashrc
+        fi
+	fi
 }
 
 

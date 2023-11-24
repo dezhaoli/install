@@ -867,6 +867,7 @@ fi
 
 _add_path "/opt/homebrew/bin"
 _add_path "/usr/local/bin"
+_add_path "$SCRIPT_ROOT"
 
 
 

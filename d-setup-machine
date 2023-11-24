@@ -533,6 +533,10 @@ function for_brew()
 	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 
+	_add_path "$DEF_BIN_DIR"
+	_add_path "/usr/local/bin"
+	_add_path "$SCRIPT_ROOT"
+	
 	if $IS_WSL && [[ -e ~/.bashrc ]]; then
 		sudo apt-get install build-essential
 		cat | sudo tee -a ~/.bashrc <<"EOF"
@@ -772,14 +776,14 @@ function install-command-line-tools()
 	_d_brew_install pidcat											# 
 	_d_brew_install qrencode										# 
 	_d_brew_install xmlstarlet										# 
-	_d_brew_install imagemagick									# 
+	_d_brew_install imagemagick										# 
 	_d_brew_install enca											# 编码查看和转换工具
 	_d_brew_install bundletool										# aab 工具
 	_d_brew_install binutils
 	_d_brew_install expect											# unbuffer
 	_d_brew_install libimobiledevice								# ios log idevicesyslog
 	_d_brew_install ios-deploy										# ios 
-
+	_d_brew_install bash-completion									# xcomplete dependence
 	_d_brew_install xargparse "for_d_before"
 	# _d_brew_install d "for_d_before"
 
@@ -851,7 +855,7 @@ function setup-all()
 	fi
 }
 
-
+set -x
 if [[ -n "$WSL_DISTRO_NAME" ]]; then
 	IS_WSL=true
 else
@@ -865,9 +869,6 @@ if [[ "$(uname -m)" == arm64 ]] ;then
 	DEF_BIN_DIR="/opt/homebrew/bin"
 fi
 
-_add_path "/opt/homebrew/bin"
-_add_path "/usr/local/bin"
-_add_path "$SCRIPT_ROOT"
 
 
 

@@ -855,7 +855,7 @@ function setup-all()
 	fi
 }
 
-set -x
+
 if [[ -n "$WSL_DISTRO_NAME" ]]; then
 	IS_WSL=true
 else

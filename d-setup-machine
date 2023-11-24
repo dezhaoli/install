@@ -757,7 +757,7 @@ function install-command-line-tools()
 	brew_install ios-deploy										# ios 
 
 	brew_install xargparse "for_d_before"
-	brew_install d "for_d_before"
+	# brew_install d "for_d_before"
 
 	
 	# brew_install "python@2"

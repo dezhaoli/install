@@ -139,61 +139,60 @@ fi
 	}
 }
 
+
+__bash_rc_get_configuration()
+{
+	local project=$1
+	local area=$2
+	eval local params=( $3 )
+	local param_jq=$4
+	######
+	read -r -d$'\1' "${params[@]}" \
+				< <(jq -s --raw-output --argjson p "\"$project\"" --argjson a "\"$area\"" \
+		'.[0] as $common | .[1] as { $tools, $project, $env} 
+		| (if ($p | length) > 0 then $p else $env.project end) as $p
+		| (if ($a | length) > 0 then $a else $env.area end) as $a
+		| $project[$p] as $project 
+		| $tools[($project["tools"])] as $tools 
+		| $common.area[$a] as $area 
+		| $common.svn[ ($project["svn"]) ] as $svn 
+		| $common.sign[ ($project["sign"])] as $sign  
+		| $common.bk[ ($project["bk"])] as $bk  
+		| 	
+			'"$param_jq"'
+		'  "$RC_COMMON_CONFIG_FILE" "$RC_MACHINE_CONFIG_FILE" )
+	######
+}
+
 #@ help="check environment variable"
 function check-project-config()
 {
 	read_from_config()
 	{
 		######
-		read -r -d$'\1'\
-					D_PROJECT \
-					D_AREA \
-					\
-					D_ANDROID_NDK19 \
-					D_ANDROID_SDK \
-					D_JDK_HOME \
-					\
-					D_WORKSPACE \
-					D_PROJECT_DIR \
-					D_EDITOR_DIR \
-					\
-					D_GCLOUD_AREA \
-					D_PACKAGE\
-					D_BUNDLE_ID\
-					\
-					D_keystore\
-					D_storepass\
-					D_keyalias\
-					D_keypass\
-					< <(jq --raw-output --argjson p "\"$project\"" --argjson a "\"$area\"" \
-			'. as { $common, $area, $project, $env} 
-			| (if ($p | length) > 0 then $p else $env.project end) as $p
-			| $project[$p] as $project 
-			| (if ($a | length) > 0 then $a else $env.area end) as $a
-			| $area[$a] as $area 
-			| $common.svn[ ($project["svn"]) ] as $svn 
-			| $common.tools[ ($project["tools"])] as $tools 
-			| $common.sign[ ($area["sign"])] as $sign  
-			| 	
+		__bash_rc_get_configuration "${project:-$D_PROJECT}" "${area:-$D_AREA}" '
+				D_PROJECT
+				D_AREA
+			
+				D_ANDROID_NDK19
+				D_ANDROID_SDK
+				D_JDK_HOME
+				
+				D_WORKSPACE
+				D_PROJECT_DIR
+				D_EDITOR_DIR
+				' '
 				$p,
 				$a,
+
 				$tools.ndk_dir,
 				$tools.sdk_dir,
-				$tools.jdk_dir, 
+				$tools.jdk_dir,
 
 				$project.workspace,
 				$project.project_dir,
-				$project.editor_dir,
-
-				$area.gcloud_area,
-				$area.package,
-				$area.bundleid,
-
-				$sign.keystore,
-				$sign.storepass,
-				$sign.keyalias,
-				$sign.keypass
-			'  "$RC_MACHINE_CONFIG_FILE" )
+				$project.editor_dir
+				'
 		######
 
 	}
